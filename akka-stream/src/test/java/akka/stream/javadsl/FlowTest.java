@@ -165,12 +165,15 @@ public class FlowTest {
 
       @Override
       public scala.collection.immutable.Seq<String> onTermination(Option<Throwable> e) {
-        if (e.isEmpty()) return Util.immutableSeq(new String[0]);
-        else return Util.immutableSingletonSeq(e.get().getMessage());
+        if (e.isEmpty())
+          return Util.immutableSeq(new String[0]);
+        else
+          return Util.immutableSingletonSeq(e.get().getMessage());
       }
 
       @Override
-      public void onError(Throwable e) {}
+      public void onError(Throwable e) {
+      }
 
       @Override
       public boolean isComplete() {
@@ -387,4 +390,26 @@ public class FlowTest {
     assertEquals("A", result);
   }
 
+  @Test
+  public void mustProduceTicks() throws Exception {
+    final JavaTestKit probe = new JavaTestKit(system);
+    final Callable<String> tick = new Callable<String>() {
+      private int count = 1;
+
+      @Override
+      public String call() {
+        return "tick-" + (count++);
+      }
+    };
+    Flow.create(FiniteDuration.create(1, TimeUnit.SECONDS), tick).foreach(new Procedure<String>() {
+      public void apply(String elem) {
+        probe.getRef().tell(elem, ActorRef.noSender());
+      }
+    }).consume(materializer);
+    probe.expectMsgEquals("tick-1");
+    probe.expectNoMsg(FiniteDuration.create(200, TimeUnit.MILLISECONDS));
+    probe.expectMsgEquals("tick-2");
+    probe.expectNoMsg(FiniteDuration.create(200, TimeUnit.MILLISECONDS));
+
+  }
 }
