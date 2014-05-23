@@ -9,20 +9,18 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
-
 import org.junit.ClassRule;
 import org.junit.Test;
-
 import static org.junit.Assert.assertEquals;
-
 import org.reactivestreams.api.Consumer;
 import org.reactivestreams.api.Producer;
-
 import scala.concurrent.Await;
 import scala.concurrent.Future;
 import scala.concurrent.duration.FiniteDuration;
+
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
+import akka.dispatch.Futures;
 import akka.japi.Function;
 import akka.japi.Function2;
 import akka.japi.Pair;
@@ -202,6 +200,26 @@ public class DuctTest {
     Producer<Integer> producer = Flow.create(Arrays.asList(1, 2, 3)).toProducer(materializer);
     producer.produceTo(inConsumer);
     probe.expectMsgEquals("done");
+  }
+
+  @Test
+  public void mustBeAbleToUseMapFuture() throws Exception {
+    final JavaTestKit probe = new JavaTestKit(system);
+    Consumer<String> c = Duct.create(String.class).mapFuture(new Function<String, Future<String>>() {
+      public Future<String> apply(String elem) {
+        return Futures.successful(elem.toUpperCase());
+      }
+    }).foreach(new Procedure<String>() {
+      public void apply(String elem) {
+        probe.getRef().tell(elem, ActorRef.noSender());
+      }
+    }).consume(materializer);
+
+    final java.lang.Iterable<String> input = Arrays.asList("a", "b", "c");
+    Flow.create(input).produceTo(materializer, c);
+    probe.expectMsgEquals("A");
+    probe.expectMsgEquals("B");
+    probe.expectMsgEquals("C");
   }
 
 }

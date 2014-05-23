@@ -23,16 +23,17 @@ private[akka] object ActorProcessor {
   import Ast._
   def props(settings: MaterializerSettings, op: AstNode): Props =
     (op match {
-      case t: Transform ⇒ Props(new TransformProcessorImpl(settings, t.transformer))
-      case s: SplitWhen ⇒ Props(new SplitWhenProcessorImpl(settings, s.p))
-      case g: GroupBy   ⇒ Props(new GroupByProcessorImpl(settings, g.f))
-      case m: Merge     ⇒ Props(new MergeImpl(settings, m.other))
-      case z: Zip       ⇒ Props(new ZipImpl(settings, z.other))
-      case c: Concat    ⇒ Props(new ConcatImpl(settings, c.next))
-      case t: Tee       ⇒ Props(new TeeImpl(settings, t.other))
-      case cf: Conflate ⇒ Props(new ConflateImpl(settings, cf.seed, cf.aggregate))
-      case ex: Expand   ⇒ Props(new ExpandImpl(settings, ex.seed, ex.extrapolate))
-      case bf: Buffer   ⇒ Props(new BufferImpl(settings, bf.size, bf.overflowStrategy))
+      case t: Transform      ⇒ Props(new TransformProcessorImpl(settings, t.transformer))
+      case m: MapFuture      ⇒ Props(new MapFutureProcessorImpl(settings, m.f))
+      case s: SplitWhen      ⇒ Props(new SplitWhenProcessorImpl(settings, s.p))
+      case g: GroupBy        ⇒ Props(new GroupByProcessorImpl(settings, g.f))
+      case m: Merge          ⇒ Props(new MergeImpl(settings, m.other))
+      case z: Zip            ⇒ Props(new ZipImpl(settings, z.other))
+      case c: Concat         ⇒ Props(new ConcatImpl(settings, c.next))
+      case t: Tee            ⇒ Props(new TeeImpl(settings, t.other))
+      case cf: Conflate      ⇒ Props(new ConflateImpl(settings, cf.seed, cf.aggregate))
+      case ex: Expand        ⇒ Props(new ExpandImpl(settings, ex.seed, ex.extrapolate))
+      case bf: Buffer        ⇒ Props(new BufferImpl(settings, bf.size, bf.overflowStrategy))
       case tt: PrefixAndTail ⇒ Props(new PrefixAndTailImpl(settings, tt.n))
       case ConcatAll         ⇒ Props(new ConcatAllImpl(settings))
     }).withDispatcher(settings.dispatcher)
@@ -162,7 +163,8 @@ private[akka] abstract class FanoutOutputs(val maxBufferSize: Int, val initialBu
 
   private var downstreamBufferSpace = 0
   private var downstreamCompleted = false
-  def demandAvailable = downstreamBufferSpace > 0
+  override def demandAvailable = downstreamBufferSpace > 0
+  def demandCount: Int = downstreamBufferSpace
 
   override val subreceive = new SubReceive(waitingExposedPublisher)
 
@@ -189,7 +191,8 @@ private[akka] abstract class FanoutOutputs(val maxBufferSize: Int, val initialBu
 
   def afterShutdown(): Unit
 
-  override protected def requestFromUpstream(elements: Int): Unit = downstreamBufferSpace += elements
+  override protected def requestFromUpstream(elements: Int): Unit =
+    downstreamBufferSpace += elements
 
   private def subscribePending(): Unit =
     exposedPublisher.takePendingSubscribers() foreach super.registerSubscriber
@@ -241,7 +244,7 @@ private[akka] abstract class ActorProcessorImpl(val settings: MaterializerSettin
     override def inputOnError(e: Throwable): Unit = ActorProcessorImpl.this.onError(e)
   }
 
-  protected val primaryOutputs: Outputs =
+  protected val primaryOutputs: FanoutOutputs =
     new FanoutOutputs(settings.maxFanOutBufferSize, settings.initialFanOutBufferSize, self, this) {
       override def afterShutdown(): Unit = {
         primaryOutputsShutdown = true
